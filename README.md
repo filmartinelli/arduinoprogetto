@@ -1,4 +1,4 @@
-# arduinoprogetto\n
+# arduinoprogetto
 
 # WifiWebDisplay
 mostra i dati in tempo reale su una pagina Web
