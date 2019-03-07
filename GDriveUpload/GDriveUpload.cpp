@@ -434,102 +434,107 @@ WiFiSSLClient Token :: getClient()
 
 // Functions
 bool httpsUploadFromSD(class Token token, String filepath) {
-    WiFiSSLClient client = token.getClient();
-    File image = SD.open(filepath, FILE_READ);
-    String name_metadata = "name=" + String(image.name());
+    WiFiSSLClient client = token.getClient();               // I get the client class
+    File image = SD.open(filepath, FILE_READ);              // I open the file I want to send
+    
+    String name_metadata ="{\"name\": \"" + String(image.name()) + "\"}";
     if (!image) {
         Serial.println("FILE OPEN FAILED");
         return false;
     } else {
         Serial.println("IMAGE OPENED of size" + String(image.size()));
     }
+    
+    
     bool received = false;
-    // Connecting
-    Serial.println("Asking for upload...");
-    
-    // Sending the upload request
-    if (client.connect("www.googleapis.com", 443)) {
-        client.println("POST /upload/drive/v3/files?uploadType=resumable HTTP/1.1");
-        client.println("Host: www.googleapis.com");
-        client.println("Authorization: " + token.token_type + " " + token.access_token);
-        client.println("Content-Length: 0");// + String(name_metadata.length()));
-        client.println("Content-Type: application/json; charset=UTF-8");
-        client.println("X-Upload-Content-Type: image/jpeg");
-        client.println("X-Upload-Content-Length: " + String(image.size()));
-        client.println("Connection: close");
-        client.println();
-        //client.println(name_metadata);
-        
-        Serial.println("Upload request sent");
-        received = false;
-    } else {
-        Serial.println("connection failed");
-        received = true;
-    }
-    
-    //Listen to the client
+    bool trytorefresh = false;
     unsigned long startTime = millis();
     String code = "";
     String uploadID = "";
-    bool trytorefresh = false;
-    while ((millis() - startTime < 5000) && !received) { //try to listen for 5 seconds
-        int i = 0;
-        while (client.available() && i < 12) {
+    
+    // Connecting -- Asking for upload permission
+    Serial.println("Asking for upload...");
+    do {
+        // Sending the upload request
+        if (client.connect("www.googleapis.com", 443)) {
+            client.println("POST /upload/drive/v3/files?uploadType=resumable HTTP/1.1");
+            client.println("Host: www.googleapis.com");
+            client.println("Authorization: " + token.token_type + " " + token.access_token);
+            client.println("Content-Length: " + String(name_metadata.length()));
+            client.println("Content-Type: application/json; charset=UTF-8");
+            client.println("X-Upload-Content-Type: image/jpeg");
+            client.println("X-Upload-Content-Length: " + String(image.size()));
+            client.println("Connection: close");
+            client.println();
+            client.println(name_metadata);
+            client.println();
+            
+            Serial.println("Upload request sent");
+            received = false;
+        } else {
+            Serial.println("connection failed");
             received = true;
-            char c = client.read();
-            Serial.write(c);
-            code = code + c;
-            i++;
         }
         
-        //When I reckognize 200 I enter here and identify the uploadID;
-        while(!trytorefresh && i>0){
+        //Listen to the client responsse
+        
+        while ((millis() - startTime < 5000) && !received) { //try to listen for 5 seconds
+            int i = 0;
+            while (client.available() && i < 12) {
+                received = true;
+                char c = client.read();
+                Serial.write(c);
+                code = code + c;
+                i++;
+            }
             
-            if (code == "HTTP/1.1 200") {
-                while (client.available()) {
-                    char c = client.read();
-                    Serial.write(c);
-                    if (c == ':') {
-                        c = client.read();
+            //When I reckognize 200 I enter here and identify the uploadID;
+            if(i>0){
+                if (code == "HTTP/1.1 200") {
+                    while (client.available()) {
+                        char c = client.read(); // here I print in the Serial the response
                         Serial.write(c);
-                        c = client.read();
-                        Serial.write(c);
-                        do {
-                            uploadID = uploadID + c;
+                        if (c == ':') {
                             c = client.read();
                             Serial.write(c);
-                        } while (c != '\n');
-                        break;
+                            c = client.read();
+                            Serial.write(c);
+                            do {
+                                uploadID = uploadID + c;  // Here I identify UploadID from the resp
+                                c = client.read();
+                                Serial.write(c);
+                            } while (c != '\n');
+                            break;
+                        }
+                        
                     }
-                    
+                    break;
                 }
-                break;
+                else if (code == "HTTP/1.1 401") {
+                    while(client.available()) {
+                        char c = client.read();
+                        Serial.write(c);
+                    }
+                    // If credentials are not valide, I'll try once to refresh the token;
+                    if(!trytorefresh){
+                        Serial.println("\nProbably you need to refresh the token\nI'm trying to refresh\n");
+                        token.httpsTokenRefresh();
+                        trytorefresh = !trytorefresh;
+                    }
+                }
+                else if (code == "HTTP/1.1 400") {
+                    while(client.available()) {
+                        char c = client.read();
+                        Serial.write(c);
+                    }
+                    break;
+                } else {
+                    break;
+                }
             }
-            else if (code == "HTTP/1.1 401") {
-                while(client.available()) {
-                    char c = client.read();
-                    Serial.write(c);
-                }
-                // If credentials are not valide, I'll try once to refresh the token;
-                if(!trytorefresh){
-                    Serial.println("\nProbably you need to refresh the token\nI'm trying to refresh\n");
-                    //token.httpsTokenRefresh();
-                    trytorefresh = !trytorefresh;
-                    
-                }
-            }
-            else if (code == "HTTP/1.1 400") {
-                while(client.available()) {
-                    char c = client.read();
-                    Serial.write(c);
-                }
-                break;
-            } else {
-                break;
-            }
+            
         }
-        
-    }
+    } while (trytorefresh); // I try to refresh once if the resposnse is 401
     
     if (code == "HTTP/1.1 200") {
         // I stop the previous client session, because now I start a new one, to do the PUT request and upload the file
@@ -540,7 +545,7 @@ bool httpsUploadFromSD(class Token token, String filepath) {
         
         // I have obtained the uploadID, now I start uploading
         String location = "https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&upload_id=" + uploadID;
-        while(!succesful){
+        while(!succesful){                              // I upload until it is successful
             
             // Upload request
             if (client.connect("www.googleapis.com", 443)) {
@@ -549,10 +554,8 @@ bool httpsUploadFromSD(class Token token, String filepath) {
                 client.println("Content-Length: "  + String(image.size()));
                 client.println("Connecion: close");
                 client.println();
-                int k = 0;
                 while (image.available()) {
-                    client.write(image.read());
-                    k ++;
+                    client.write(image.read());         // Here I send the bytes of the image
                 }
                 
                 image.close();
@@ -562,7 +565,7 @@ bool httpsUploadFromSD(class Token token, String filepath) {
                 received = true;
             }
             
-            // Listening
+            // Listening to the response
             startTime = millis();
             String code = "";
             while ((millis() - startTime < 5000) && !received) { //try to listen for 5 seconds
@@ -578,6 +581,10 @@ bool httpsUploadFromSD(class Token token, String filepath) {
                 // HTTP 200 OK
                 if (code == "HTTP/1.1 200" || code == "HTTP/1.1 201")
                 {
+                    while(client.available()) {
+                        char c = client.read();
+                        Serial.write(c);
+                    }
                     Serial.println("\n\nUpload succesful");
                     succesful = true;
                     client.stop();
@@ -588,6 +595,8 @@ bool httpsUploadFromSD(class Token token, String filepath) {
                 // HTTP 308 I have to restart my upload
                 
                 else if (code == "HTTP/1.1 308") {
+                    
+                    // Here I print the response in serial and I identify the range to re-send. Actually it always happens that the range header is not present, so I re-send the whole image
                     bool range_present = false;
                     char Range[] = "xxxxxx";
                     String byte_range = "";
@@ -647,7 +656,6 @@ bool httpsUploadFromSD(class Token token, String filepath) {
                     }
                     
                     Serial.println("\n\nUpload interrupted. Starting a new session");
-                    
                     
                     // I have to open image again
                     image = SD.open(filepath, FILE_READ);

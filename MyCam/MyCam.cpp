@@ -65,7 +65,7 @@ ArduCAM camera_setup(int camera_cs) {
     myCAM.InitCAM();
     
     // Camera format is set
-    myCAM.OV2640_set_JPEG_size(OV2640_1600x1200);
+    myCAM.OV2640_set_JPEG_size(OV2640_1024x768);
     delay(1000);
     return myCAM;
 }
@@ -160,7 +160,7 @@ bool save_to_SD (ArduCAM *myCAM, String dir, String file_name) {
 }
 
 bool httpsUploadFromArducam(ArduCAM *myCAM, String file_name, class Token token) {
-    String name_metadata = "name=" + file_name;
+    String name_metadata = "{\"name\": \"" + file_name + "\"}";
     WiFiSSLClient client = token.getClient();
     
     uint8_t temp = 0, temp_last = 0;
@@ -179,13 +179,14 @@ bool httpsUploadFromArducam(ArduCAM *myCAM, String file_name, class Token token)
         client.println("POST /upload/drive/v3/files?uploadType=resumable HTTP/1.1");
         client.println("Host: www.googleapis.com");
         client.println("Authorization: " + token.token_type + " " + token.access_token);
-        client.println("Content-Length: 0"); // + String(name_metadata.length()));
+        client.println("Content-Length: " + String(name_metadata.length()));
         client.println("Content-Type: application/json; charset=UTF-8");
         client.println("X-Upload-Content-Type: image/jpeg");
         client.println("X-Upload-Content-Length: " + String(length));
         client.println("Connection: close");
         client.println();
-        //client.println(name_metadata);
+        client.println(name_metadata);
+        client.println();
         
         Serial.println("Upload request sent");
         received = false;
@@ -241,9 +242,8 @@ bool httpsUploadFromArducam(ArduCAM *myCAM, String file_name, class Token token)
                 // If credentials are not valide, I'll try once to refresh the token;
                 if(!trytorefresh){
                     Serial.println("\nProbably you need to refresh the token\nI'm trying to refresh\n");
-                    //token.httpsTokenRefresh();
+                    token.httpsTokenRefresh();
                     trytorefresh = !trytorefresh;
-                    
                 }
             }
             else if (code == "HTTP/1.1 400") {
