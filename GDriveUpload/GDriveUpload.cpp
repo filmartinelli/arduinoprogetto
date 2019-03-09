@@ -448,7 +448,7 @@ bool httpsUploadFromSD(class Token token, String filepath) {
     
     bool received = false;
     bool trytorefresh = false;
-    unsigned long startTime = millis();
+    unsigned long startTime = 0;
     String code = "";
     String uploadID = "";
     
@@ -472,11 +472,13 @@ bool httpsUploadFromSD(class Token token, String filepath) {
             Serial.println("Upload request sent");
             received = false;
         } else {
-            Serial.println("connection failed");
+            Serial.println("Connection failed");
             received = true;
         }
         
         //Listen to the client responsse
+        startTime = millis();
+        code = "";
         
         while ((millis() - startTime < 5000) && !received) { //try to listen for 5 seconds
             int i = 0;
@@ -489,8 +491,13 @@ bool httpsUploadFromSD(class Token token, String filepath) {
             }
             
             //When I reckognize 200 I enter here and identify the uploadID;
-            if(i>0){
+            if(i>0) {
                 if (code == "HTTP/1.1 200") {
+                    
+                    if (trytorefresh) {
+                        trytorefresh = !trytorefresh;
+                    }
+                    
                     while (client.available()) {
                         char c = client.read(); // here I print in the Serial the response
                         Serial.write(c);
@@ -520,9 +527,15 @@ bool httpsUploadFromSD(class Token token, String filepath) {
                         Serial.println("\nProbably you need to refresh the token\nI'm trying to refresh\n");
                         token.httpsTokenRefresh();
                         trytorefresh = !trytorefresh;
+                        code = "";
+                    } else if (trytorefresh) {
+                        trytorefresh = !trytorefresh;
                     }
                 }
                 else if (code == "HTTP/1.1 400") {
+                    if (trytorefresh) {
+                        trytorefresh = !trytorefresh;
+                    }
                     while(client.available()) {
                         char c = client.read();
                         Serial.write(c);
@@ -531,6 +544,8 @@ bool httpsUploadFromSD(class Token token, String filepath) {
                 } else {
                     break;
                 }
+            } else if (trytorefresh) {
+                    trytorefresh = !trytorefresh;
             }
             
         }
@@ -557,7 +572,7 @@ bool httpsUploadFromSD(class Token token, String filepath) {
                 while (image.available()) {
                     client.write(image.read());         // Here I send the bytes of the image
                 }
-                
+                Serial.println();
                 image.close();
                 received = false;
             } else {
@@ -585,7 +600,7 @@ bool httpsUploadFromSD(class Token token, String filepath) {
                         char c = client.read();
                         Serial.write(c);
                     }
-                    Serial.println("\n\nUpload succesful");
+                    Serial.println("\nUpload succesful");
                     succesful = true;
                     client.stop();
                     return succesful;
@@ -654,8 +669,8 @@ bool httpsUploadFromSD(class Token token, String filepath) {
                         Serial.println("byte_range = " + byte_range);
                         
                     }
-                    
-                    Serial.println("\n\nUpload interrupted. Starting a new session");
+                    client.stop();
+                    Serial.println("\nUpload interrupted. Starting a new session");
                     
                     // I have to open image again
                     image = SD.open(filepath, FILE_READ);
