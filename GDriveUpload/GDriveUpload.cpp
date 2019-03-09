@@ -553,37 +553,43 @@ bool httpsUploadFromSD(class Token token, String filepath) {
     
     if (code == "HTTP/1.1 200") {
         // I stop the previous client session, because now I start a new one, to do the PUT request and upload the file
-        client.stop();
         Serial.println("Token request has been succesful. Starting upload");
-
         bool succesful = false;
         
         // I have obtained the uploadID, now I start uploading
         String location = "https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&upload_id=" + uploadID;
+        
+        received = true;
+        
         while(!succesful){                              // I upload until it is successful
             
+            // I stop the previous client session, because now I start a new one, to do the PUT request and upload the file
+            client.stop();
+            
             // Upload request
-            if (client.connect("www.googleapis.com", 443)) {
-                client.println("PUT " + location + " HTTP/1.1");
-                client.println("User-Agent: Arduino Camera");
-                client.println("Content-Length: "  + String(image.size()));
-                client.println("Connecion: close");
-                client.println();
-                while (image.available()) {
-                    client.write(image.read());         // Here I send the bytes of the image
+            if (received) {
+                if (client.connect("www.googleapis.com", 443)) {
+                    client.println("PUT " + location + " HTTP/1.1");
+                    client.println("User-Agent: Arduino Camera");
+                    client.println("Content-Length: "  + String(image.size()));
+                    client.println("Connection: close");
+                    client.println();
+                    while (image.available()) {
+                        client.write(image.read());         // Here I send the bytes of the image
+                    }
+                    Serial.println(".");
+                    image.close();
+                    received = false;
+                } else {
+                    Serial.println("Connection failed");
+                    received = true;
                 }
-                Serial.println();
-                image.close();
-                received = false;
-            } else {
-                Serial.println("Connection failed");
-                received = true;
             }
             
             // Listening to the response
             startTime = millis();
             String code = "";
-            while ((millis() - startTime < 5000) && !received) { //try to listen for 5 seconds
+            while (millis() - startTime < 10000 && !received) { //try to listen for 5 seconds
                 int i = 0;
                 while (client.available() && i < 12) {
                     received = true;
@@ -602,7 +608,7 @@ bool httpsUploadFromSD(class Token token, String filepath) {
                     }
                     Serial.println("\nUpload succesful");
                     succesful = true;
-                    client.stop();
+                    // client.stop();
                     return succesful;
                     
                 }
@@ -669,7 +675,7 @@ bool httpsUploadFromSD(class Token token, String filepath) {
                         Serial.println("byte_range = " + byte_range);
                         
                     }
-                    client.stop();
+                    // client.stop();
                     Serial.println("\nUpload interrupted. Starting a new session");
                     
                     // I have to open image again
@@ -677,12 +683,41 @@ bool httpsUploadFromSD(class Token token, String filepath) {
                     delay(1000);
                 }
             }
+            Serial.println("Here");
+            
+            if (!received) {
+                client.stop();
+                if (client.connect("www.googleapis.com", 443)) {
+                    client.println("PUT " + location + " HTTP/1.1");
+                    //client.println("User-Agent: Arduino Camera");
+                    client.println("Content-Length: 0");
+                    client.println("Content-Range: bytes */" + String(image.size()));
+                    //client.println("Connection: close");
+                    client.println();
+                    received = false;
+                }
+                
+                Serial.println("Sent, listening");
+                startTime = millis();
+                while ((millis() - startTime < 10000) && !received) { //try to listen for 5 seconds
+                    
+                    while (client.available()) {
+                        received = true;
+                        char c = client.read();
+                        Serial.write(c);
+                    }
+            
+                    
+            }
+                client.stop();
+            }
         }
 
     } else if (code == "HTTP/1.1 401" && trytorefresh) {
         Serial.println("Upload failed. Probably you need a new token");
     }
-                       
+    
+    Serial.println("Upload failed");
     client.stop();
     return false;
 }
