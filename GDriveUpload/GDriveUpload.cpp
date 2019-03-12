@@ -567,29 +567,29 @@ bool httpsUploadFromSD(class Token token, String filepath) {
             client.stop();
             
             // Upload request
-            if (received) {
-                if (client.connect("www.googleapis.com", 443)) {
-                    client.println("PUT " + location + " HTTP/1.1");
-                    client.println("User-Agent: Arduino Camera");
-                    client.println("Content-Length: "  + String(image.size()));
-                    client.println("Connection: close");
-                    client.println();
-                    while (image.available()) {
-                        client.write(image.read());         // Here I send the bytes of the image
-                    }
-                    Serial.println(".");
-                    image.close();
-                    received = false;
-                } else {
-                    Serial.println("Connection failed");
-                    received = true;
+
+            if (client.connect("www.googleapis.com", 443)) {
+                client.println("PUT " + location + " HTTP/1.1");
+                client.println("User-Agent: Arduino Camera");
+                client.println("Content-Length: "  + String(image.size()));
+                client.println("Connection: close");
+                client.println();
+                while (image.available()) {
+                    client.write(image.read());         // Here I send the bytes of the image
                 }
+                Serial.println(".");
+                image.close();
+                received = false;
+            } else {
+                Serial.println("Connection failed");
+                received = true;
             }
+
             
             // Listening to the response
             startTime = millis();
             String code = "";
-            while (millis() - startTime < 10000 && !received) { //try to listen for 5 seconds
+            while (millis() - startTime < 15000 && !received) { //try to listen for 5 seconds
                 int i = 0;
                 while (client.available() && i < 12) {
                     received = true;
@@ -608,7 +608,7 @@ bool httpsUploadFromSD(class Token token, String filepath) {
                     }
                     Serial.println("\nUpload succesful");
                     succesful = true;
-                    // client.stop();
+                    client.stop();
                     return succesful;
                     
                 }
@@ -616,66 +616,8 @@ bool httpsUploadFromSD(class Token token, String filepath) {
                 // HTTP 308 I have to restart my upload
                 
                 else if (code == "HTTP/1.1 308") {
-                    
-                    // Here I print the response in serial and I identify the range to re-send. Actually it always happens that the range header is not present, so I re-send the whole image
-                    bool range_present = false;
-                    char Range[] = "xxxxxx";
-                    String byte_range = "";
-                    uint32_t re_send_length = 0;
-                    
-                    
-                    while (client.available()) {
-                        for (int k = 0; k<5; k++){
-                            Range[k] = Range[k++];
-                        }
-                        char c = client.read();
-                        Range[5] = c;
-                        Serial.write(c);
-                        
-                        if (Range == "Range:") {
-                            break;
-                            range_present = true;
-                        }
-
-                    }
-                    
-                    if (range_present) {
-                        int k = 0;
-                        while (client.available() && k<7) {
-                            char c = client.read();
-                            Serial.write(c);
-                        }
-                        k = 0;
-                        String Range2 = "";
-                        while (client.available()) {
-                            char c = client.read();
-                            Serial.write(c);
-                            if (c == '\n') {
-                                break;
-                            }
-                            Range2 = Range2 + c;
-                        }
-                        while (client.available()) {
-                            char c = client.read();
-                            Serial.write(c);
-                        }
-                        
-                        bool a = false;
-                        for (k = 0; k<Range2.length(); k++) {
-                            
-                            if (a) {
-                                byte_range = byte_range + Range2[k];
-                            }
-                            
-                            if (Range2[k] = '-') {
-                                a = true;
-                            }
-                        }
-                        
-                        Serial.println("byte_range = " + byte_range);
-                        
-                    }
-                    // client.stop();
+                    client.flush();
+                    client.stop();
                     Serial.println("\nUpload interrupted. Starting a new session");
                     
                     // I have to open image again
@@ -683,34 +625,16 @@ bool httpsUploadFromSD(class Token token, String filepath) {
                     delay(1000);
                 }
             }
-            Serial.println("Here");
-            
+
             if (!received) {
+                client.flush();
                 client.stop();
-                if (client.connect("www.googleapis.com", 443)) {
-                    client.println("PUT " + location + " HTTP/1.1");
-                    //client.println("User-Agent: Arduino Camera");
-                    client.println("Content-Length: 0");
-                    client.println("Content-Range: bytes */" + String(image.size()));
-                    //client.println("Connection: close");
-                    client.println();
-                    received = false;
-                }
+                Serial.println("\nUpload interrupted. Starting a new session");
                 
-                Serial.println("Sent, listening");
-                startTime = millis();
-                while ((millis() - startTime < 10000) && !received) { //try to listen for 5 seconds
-                    
-                    while (client.available()) {
-                        received = true;
-                        char c = client.read();
-                        Serial.write(c);
-                    }
+                // I have to open image again
+                image = SD.open(filepath, FILE_READ);
+            }
             
-                    
-            }
-                client.stop();
-            }
         }
 
     } else if (code == "HTTP/1.1 401" && trytorefresh) {
@@ -718,6 +642,7 @@ bool httpsUploadFromSD(class Token token, String filepath) {
     }
     
     Serial.println("Upload failed");
+    client.flush();
     client.stop();
     return false;
 }

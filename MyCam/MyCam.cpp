@@ -65,9 +65,19 @@ ArduCAM camera_setup(int camera_cs) {
     myCAM.InitCAM();
     
     // Camera format is set
-    myCAM.OV2640_set_JPEG_size(OV2640_1024x768);
+    myCAM.OV2640_set_JPEG_size(OV2640_800x600);
     delay(1000);
     return myCAM;
+}
+
+void power_mode(ArduCAM *myCAM, bool high) {
+    if (high) {
+        // high power mode
+        (*myCAM).clear_bit(ARDUCHIP_GPIO, GPIO_PWDN_MASK);
+    } else {
+        // Standby mode
+       (*myCAM).set_bit(ARDUCHIP_GPIO, GPIO_PWDN_MASK);
+    }
 }
 
 void start_capture_picture(ArduCAM *myCAM) {
@@ -163,184 +173,48 @@ bool httpsUploadFromArducam(ArduCAM *myCAM, String file_name, class Token token)
     String name_metadata = "{\"name\": \"" + file_name + "\"}";
     WiFiSSLClient client = token.getClient();
     
-    uint8_t temp = 0, temp_last = 0;
-    byte buf[256];
+    // uint8_t temp = 0, temp_last = 0;
+    // byte buf[256];
     static int i = 0;
-    bool is_header = false;
+   //  bool is_header = false;
     uint32_t length = (*myCAM).read_fifo_length();
     
     bool received = false;
-    
-    // Connecting and asking for UPLOAD
-    Serial.println("Asking for upload...");
-    
-    // Sending the upload request
-    if (client.connect("www.googleapis.com", 443)) {
-        client.println("POST /upload/drive/v3/files?uploadType=resumable HTTP/1.1");
-        client.println("Host: www.googleapis.com");
-        client.println("Authorization: " + token.token_type + " " + token.access_token);
-        client.println("Content-Length: " + String(name_metadata.length()));
-        client.println("Content-Type: application/json; charset=UTF-8");
-        client.println("X-Upload-Content-Type: image/jpeg");
-        client.println("X-Upload-Content-Length: " + String(length));
-        client.println("Connection: close");
-        client.println();
-        client.println(name_metadata);
-        client.println();
-        
-        Serial.println("Upload request sent");
-        received = false;
-    } else {
-        Serial.println("Connection failed");
-        received = true;
-    }
-    
-    
-    //Listen to the client
+    bool trytorefresh = false;
     unsigned long startTime = millis();
     String code = "";
     String uploadID = "";
-    bool trytorefresh = false;
-    while ((millis() - startTime < 5000) && !received) { //try to listen for 5 seconds
-        int i = 0;
-        while (client.available() && i < 12) {
-            received = true;
-            char c = client.read();
-            Serial.write(c);
-            code = code + c;
-            i++;
-        }
-        
-        //When I reckognize 200 I enter here and identify the uploadID;
-        while(!trytorefresh && i>0){
-            
-            if (code == "HTTP/1.1 200") {
-                while (client.available()) {
-                    char c = client.read();
-                    Serial.write(c);
-                    if (c == ':') {
-                        c = client.read();
-                        Serial.write(c);
-                        c = client.read();
-                        Serial.write(c);
-                        do {
-                            uploadID = uploadID + c;
-                            c = client.read();
-                            Serial.write(c);
-                        } while (c != '\n');
-                        break;
-                    }
-                    
-                }
-                break;
-            }
-            else if (code == "HTTP/1.1 401") {
-                while(client.available()) {
-                    char c = client.read();
-                    Serial.write(c);
-                }
-                // If credentials are not valide, I'll try once to refresh the token;
-                if(!trytorefresh){
-                    Serial.println("\nProbably you need to refresh the token\nI'm trying to refresh\n");
-                    token.httpsTokenRefresh();
-                    trytorefresh = !trytorefresh;
-                }
-            }
-            else if (code == "HTTP/1.1 400") {
-                while(client.available()) {
-                    char c = client.read();
-                    Serial.write(c);
-                }
-                break;
-            } else {
-                break;
-            }
-        }
-    }
     
-    bool successful = false;
-    uint32_t total_length = length;
+    // Connecting and asking for UPLOAD
+    Serial.println("Asking for upload...");
+    do {
     
-    if (code == "HTTP/1.1 200") {
-        // I stop the previous client session, because now I start a new one, to do the PUT request and upload the file
-        client.stop();
-        Serial.println("Token request has been successful. Starting upload");
-
-        
-        // I have obtained the uploadID, now I start uploading
-        String location = "https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&upload_id=" + uploadID;
-
-
+        // Sending the upload request
         if (client.connect("www.googleapis.com", 443)) {
-            client.println("PUT " + location + " HTTP/1.1");
-            client.println("User-Agent: Arduino Camera");
-            client.println("Content-Length: "  + String(length));
-            client.println("Connecion: keep-alive");
+            client.println("POST /upload/drive/v3/files?uploadType=resumable HTTP/1.1");
+            client.println("Host: www.googleapis.com");
+            client.println("Authorization: " + token.token_type + " " + token.access_token);
+            client.println("Content-Length: " + String(name_metadata.length()));
+            client.println("Content-Type: application/json; charset=UTF-8");
+            client.println("X-Upload-Content-Type: image/jpeg");
+            client.println("X-Upload-Content-Length: " + String(length));
+            client.println("Connection: close");
+            client.println();
+            client.println(name_metadata);
             client.println();
             
-            // Starting the FIFO reading
-            (*myCAM).CS_LOW();
-            (*myCAM).set_fifo_burst();
-
-            while (length--) {
-                Serial.println(length);
-                //client.write((*myCAM).read_fifo());
-                
-                // I start the communication
-                temp =  SPI.transfer(0x00);
-                
-                //Read JPEG data from FIFO
-                
-                //If find the end, break while
-                if ((temp == 0xD9) && (temp_last == 0xFF))
-                {
-                    buf[i++] = temp;  //save the last  0XD9
-                    //Write the remain bytes in the buffer
-                    (*myCAM).CS_HIGH();
-                    client.write(buf, i);
-                    
-                    is_header = false;
-                    i = 0;
-                }
-                
-                if (is_header == true)
-                {
-                    //Write image data to buffer if not full
-                    if (i < 256)
-                        buf[i++] = temp;
-                    
-                    //Write 256 bytes image data to file
-                    else
-                    {
-                        (*myCAM).CS_HIGH();
-                        client.write(buf, 256);
-                        i = 0;
-                        buf[i++] = temp;
-                        (*myCAM).CS_LOW();
-                        (*myCAM).set_fifo_burst();
-                    }
-                }
-                else if ((temp == 0xD8) & (temp_last == 0xFF))
-                {
-                    is_header = true;
-                    buf[i++] = temp_last;
-                    buf[i++] = temp;
-                }
-            }
-            client.write((*myCAM).read_fifo());
+            Serial.println("Upload request sent");
             received = false;
         } else {
             Serial.println("Connection failed");
             received = true;
         }
         
-
-        // Listenig to the client to check if the upload has been successful
-        startTime = millis();
-        String code = "";
-        int i = 0;
-        while ((millis() - startTime < 10000) && !received) { //try to listen for 5 seconds
-
+        
+        //Listen to the client
+        
+        while ((millis() - startTime < 5000) && !received) { //try to listen for 5 seconds
+            int i = 0;
             while (client.available() && i < 12) {
                 received = true;
                 char c = client.read();
@@ -348,46 +222,145 @@ bool httpsUploadFromArducam(ArduCAM *myCAM, String file_name, class Token token)
                 code = code + c;
                 i++;
             }
-
-            if (code == "HTTP/1.1 200" || code == "HTTP/1.1 201")
-            {
-                Serial.println("\n\nUpload successful");
-                successful = true;
-                client.stop();
-                Serial.println("FINITO");
-                return true;
-            }
-            }
-        
-        if (client.connect("www.googleapis.com", 443)) {
-            client.println("PUT " + location + " HTTP/1.1");
-            client.println("User-Agent: Arduino Camera");
-            client.println("Content-Length: 0");
-            client.println("Content-Range: bytes */" + String(total_length));
-            client.println("Connecion: keep-alive");
-            client.println();
-            received = false;
-            Serial.println("xxx");
-        }
-        
-        startTime = millis();
-        while ((millis() - startTime < 10000) && !received) { //try to listen for 5 seconds
             
-            while (client.available()) {
-                received = true;
-                char c = client.read();
-                Serial.write(c);
+            //When I reckognize 200 I enter here and identify the uploadID;
+            if(i>0){
+                if (code == "HTTP/1.1 200") {
+                    while (client.available()) {
+                        char c = client.read();
+                        Serial.write(c);
+                        if (c == ':') {
+                            c = client.read();
+                            Serial.write(c);
+                            c = client.read();
+                            Serial.write(c);
+                            do {
+                                uploadID = uploadID + c;
+                                c = client.read();
+                                Serial.write(c);
+                            } while (c != '\n');
+                            break;
+                        }
+                        
+                    }
+                    break;
+                }
+                else if (code == "HTTP/1.1 401") {
+                    while(client.available()) {
+                        char c = client.read();
+                        Serial.write(c);
+                    }
+                    // If credentials are not valide, I'll try once to refresh the token;
+                    if(!trytorefresh){
+                        Serial.println("\nProbably you need to refresh the token\nI'm trying to refresh\n");
+                        token.httpsTokenRefresh();
+                        trytorefresh = !trytorefresh;
+                    }
+                }
+                else if (code == "HTTP/1.1 400") {
+                    while(client.available()) {
+                        char c = client.read();
+                        Serial.write(c);
+                    }
+                    break;
+                } else {
+                    break;
+                }
             }
-            
         }
+    } while (trytorefresh);
     
+    bool successful = false;
+    uint32_t total_length = length;
+    Serial.println();
+    
+    if (code == "HTTP/1.1 200") {
+        // I stop the previous client session, because now I start a new one, to do the PUT request and upload the file
+        client.flush();
+        client.stop();
+        Serial.println("Token request has been successful. Starting upload");
+
         
+        // I have obtained the uploadID, now I start uploading
+        String location = "https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&upload_id=" + uploadID;
+        while(!successful){
+
+            if (client.connect("www.googleapis.com", 443)) {
+                client.println("PUT " + location + " HTTP/1.1");
+                client.println("User-Agent: Arduino Camera");
+                client.println("Content-Length: "  + String(length));
+                client.println("Connecion: close");
+                client.println();
+                
+                uint32_t temp_length = length;
+                while(temp_length--) {
+                    client.write((*myCAM).read_fifo());
+                }
+                client.write((*myCAM).read_fifo());
+                received = false;
+            } else {
+                Serial.println("Connection failed");
+                received = true;
+            }
+
+            // Listenig to the client to check if the upload has been successful
+            startTime = millis();
+            String code = "";
+            int i = 0;
+            while ((millis() - startTime < 10000) && !received) { //try to listen for 5 seconds
+
+                while (client.available() && i < 12) {
+                    received = true;
+                    char c = client.read();
+                    Serial.write(c);
+                    code = code + c;
+                    i++;
+                }
+
+                if (code == "HTTP/1.1 200" || code == "HTTP/1.1 201")
+                {
+                    while(client.available()) {
+                        char c = client.read();
+                        Serial.write(c);
+                    }
+                    Serial.println("\nUpload successful");
+                    successful = true;
+                    client.flush();
+                    client.stop();
+                    return successful;
+                }
+                
+                // HTTP 308 I have to restart my upload
+                
+                else if (code == "HTTP/1.1 308") {
+
+                    Serial.println("\nUpload interrupted. Starting a new session");
+                    
+                    // I have to reset the FIFO read pointer 
+                    (*myCAM).write_reg(0x04, 1010000);
+                    client.flush();
+                    client.stop();
+                    delay(1000);
+                }
         }
-        
+            
+            if (!received) {
+                Serial.println("\nUpload interrupted. Starting a new session");
+                
+                // I have to reset the FIFO read pointer
+                (*myCAM).write_reg(0x04, 1010000);
+                client.flush();
+                client.stop();
+                delay(1000);
+            }
+    }
+    }
+    
     else if (code == "HTTP/1.1 401" && trytorefresh) {
         Serial.println("Upload failed. Probably you need a new token");
     }
     
+    client.flush();
     client.stop();
-    return successful;
+    return false;
 }

@@ -27,6 +27,8 @@
 
 ArduCAM camera_setup(int camera_cs);
 
+void power_mode(ArduCAM *myCAM, bool high);
+
 void start_capture_picture(ArduCAM *myCAM);
 
 bool save_to_SD (ArduCAM *myCAM, String dir, String file_name);

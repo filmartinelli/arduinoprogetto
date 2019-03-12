@@ -10,12 +10,13 @@
     #include <RTCZero.h>
     #include "Arduino.h"
     #include <pins_arduino.h>
-#endif /* MyTime_h */
 
 void print2digits(int number);
 
-String hours_withpoints(RTCZero rtc);
+String hours_withpoints(RTCZero *rtc);
 
-String hours_withoutpoints(RTCZero rtc);
+String hours_withoutpoints(RTCZero *rtc);
 
 // add day
+
+#endif /* MyTime_h */
