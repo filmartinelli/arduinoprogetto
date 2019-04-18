@@ -44,15 +44,7 @@ void Measurement::begin(int pinLight, int pinDHT) {
 }
 
 void Measurement::measure(RTCZero *rtc) {
-    // Measure humidity and temperature
-    dht.readHumidity();
-    dht.readTemperature();
-    
-    if (isnan(dht.humidity) || isnan(dht.temperature_C)) {
-        Serial.println("Il sensore ha sbagliato la lettura");
-        return;
-    }
-    
+   
     light = analogRead(_pinLight);
     delay(10);
     
@@ -68,6 +60,15 @@ void Measurement::measure(RTCZero *rtc) {
     
     time = hours_withpoints(rtc);
     lightint = (((float)light)/Lmax)*100;
+    
+    dht.readHumidity();
+    dht.readTemperature();
+    
+    if (isnan(dht.humidity) || isnan(dht.temperature_C)) {
+        Serial.println("Il sensore ha sbagliato la lettura");
+        return;
+    }
+    
     humidity = dht.humidity;
     temperature = dht.temperature_C;
     Serial.println(String(humidity));
@@ -110,18 +111,17 @@ bool Measurement::httpsDataSend(WiFiSSLClient client) {
             code = code + c;
             i++;
         }
-        
-        while (client.available()) {
-            char c = client.read();
-            Serial.write(c);
-        }
-
+    }
+    
+    while (client.available()) {
+        char c = client.read();
+        Serial.write(c);
     }
     
     //When I reckognize 200 I enter here and identify the uploadID;
     if (code == "HTTP/1.1 200" || code == "HTTP/1.1 302") {
         Serial.println("Data sending successful");
-         client.stop();
+        client.stop();
         return true;
     } else {
         Serial.println("Data sending unsuccessful");
