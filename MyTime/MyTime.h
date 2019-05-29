@@ -17,6 +17,10 @@ String hours_withpoints(RTCZero *rtc);
 
 String hours_withoutpoints(RTCZero *rtc);
 
+String date_withbracket(RTCZero *rtc);
+
+String date_withoutbracket(RTCZero *rtc);
+
 // add day
 
 #endif /* MyTime_h */

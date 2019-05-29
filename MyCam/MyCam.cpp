@@ -224,10 +224,15 @@ bool httpsUploadFromArducam(ArduCAM *myCAM, String file_name, class Token token)
             }
             
             //When I reckognize 200 I enter here and identify the uploadID;
-            if(i>0){
+            if(i>0) {
                 if (code == "HTTP/1.1 200") {
+                    
+                    if (trytorefresh) {
+                        trytorefresh = !trytorefresh;
+                    }
+                    
                     while (client.available()) {
-                        char c = client.read();
+                        char c = client.read(); // here I print in the Serial the response
                         Serial.write(c);
                         if (c == ':') {
                             c = client.read();
@@ -235,7 +240,7 @@ bool httpsUploadFromArducam(ArduCAM *myCAM, String file_name, class Token token)
                             c = client.read();
                             Serial.write(c);
                             do {
-                                uploadID = uploadID + c;
+                                uploadID = uploadID + c;  // Here I identify UploadID from the resp
                                 c = client.read();
                                 Serial.write(c);
                             } while (c != '\n');
@@ -255,9 +260,15 @@ bool httpsUploadFromArducam(ArduCAM *myCAM, String file_name, class Token token)
                         Serial.println("\nProbably you need to refresh the token\nI'm trying to refresh\n");
                         token.httpsTokenRefresh();
                         trytorefresh = !trytorefresh;
+                        code = "";
+                    } else if (trytorefresh) {
+                        trytorefresh = !trytorefresh;
                     }
                 }
                 else if (code == "HTTP/1.1 400") {
+                    if (trytorefresh) {
+                        trytorefresh = !trytorefresh;
+                    }
                     while(client.available()) {
                         char c = client.read();
                         Serial.write(c);
@@ -266,36 +277,37 @@ bool httpsUploadFromArducam(ArduCAM *myCAM, String file_name, class Token token)
                 } else {
                     break;
                 }
+            } else if (trytorefresh) {
+                trytorefresh = !trytorefresh;
             }
+            
         }
-    } while (trytorefresh);
+    } while (trytorefresh); // I try to refresh once if the resposnse is 401
     
-    bool successful = false;
     uint32_t total_length = length;
-    Serial.println();
     
     if (code == "HTTP/1.1 200") {
-        // I stop the previous client session, because now I start a new one, to do the PUT request and upload the file
-        client.flush();
-        client.stop();
         Serial.println("Token request has been successful. Starting upload");
-
-        
+        bool successful = false;
         // I have obtained the uploadID, now I start uploading
         String location = "https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&upload_id=" + uploadID;
+        
         while(!successful){
-
+                // I stop the previous client session, because now I start a new one, to do the PUT request and upload the file
+                client.stop();
             if (client.connect("www.googleapis.com", 443)) {
                 client.println("PUT " + location + " HTTP/1.1");
                 client.println("User-Agent: Arduino Camera");
                 client.println("Content-Length: "  + String(length));
-                client.println("Connecion: close");
+                client.println("Connection: close");
                 client.println();
                 
                 uint32_t temp_length = length;
+                
                 while(temp_length--) {
                     client.write((*myCAM).read_fifo());
                 }
+                Serial.println("...");
                 client.write((*myCAM).read_fifo());
                 received = false;
             } else {
@@ -306,9 +318,9 @@ bool httpsUploadFromArducam(ArduCAM *myCAM, String file_name, class Token token)
             // Listenig to the client to check if the upload has been successful
             startTime = millis();
             String code = "";
-            int i = 0;
+            
             while ((millis() - startTime < 10000) && !received) { //try to listen for 5 seconds
-
+                int i = 0;
                 while (client.available() && i < 12) {
                     received = true;
                     char c = client.read();
@@ -333,24 +345,32 @@ bool httpsUploadFromArducam(ArduCAM *myCAM, String file_name, class Token token)
                 // HTTP 308 I have to restart my upload
                 
                 else if (code == "HTTP/1.1 308") {
-
-                    Serial.println("\nUpload interrupted. Starting a new session");
-                    
-                    // I have to reset the FIFO read pointer 
-                    (*myCAM).write_reg(0x04, 1010000);
+                    while(client.available()) {
+                        char c = client.read();
+                        Serial.write(c);
+                    }
                     client.flush();
                     client.stop();
+                    Serial.println("\n308 response code.\nUpload interrupted. Starting a new session");
+                    // I have to reset the FIFO read pointer 
+                    (*myCAM).write_reg(0x04, 1010000);
                     delay(1000);
+                } else {
+                    if (received) {
+                        while(client.available()) {
+                            char c = client.read();
+                            Serial.write(c);
+                        }
+                    }
                 }
         }
             
             if (!received) {
-                Serial.println("\nUpload interrupted. Starting a new session");
-                
                 // I have to reset the FIFO read pointer
                 (*myCAM).write_reg(0x04, 1010000);
                 client.flush();
                 client.stop();
+                Serial.println("\nNo response.\nUpload interrupted. Starting a new session");
                 delay(1000);
             }
     }
@@ -358,8 +378,12 @@ bool httpsUploadFromArducam(ArduCAM *myCAM, String file_name, class Token token)
     
     else if (code == "HTTP/1.1 401" && trytorefresh) {
         Serial.println("Upload failed. Probably you need a new token");
+        client.flush();
+        client.stop();
+        return false;
     }
     
+    Serial.println("\nUpload failed");
     client.flush();
     client.stop();
     return false;

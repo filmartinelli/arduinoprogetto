@@ -552,10 +552,8 @@ bool httpsUploadFromSD(class Token token, String filepath) {
     } while (trytorefresh); // I try to refresh once if the resposnse is 401
     
     if (code == "HTTP/1.1 200") {
-        // I stop the previous client session, because now I start a new one, to do the PUT request and upload the file
         Serial.println("Token request has been succesful. Starting upload");
         bool succesful = false;
-        
         // I have obtained the uploadID, now I start uploading
         String location = "https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&upload_id=" + uploadID;
         
@@ -577,7 +575,7 @@ bool httpsUploadFromSD(class Token token, String filepath) {
                 while (image.available()) {
                     client.write(image.read());         // Here I send the bytes of the image
                 }
-                Serial.println(".");
+                Serial.println("...");
                 image.close();
                 received = false;
             } else {
@@ -589,6 +587,7 @@ bool httpsUploadFromSD(class Token token, String filepath) {
             // Listening to the response
             startTime = millis();
             String code = "";
+            
             while (millis() - startTime < 15000 && !received) { //try to listen for 5 seconds
                 int i = 0;
                 while (client.available() && i < 12) {
@@ -598,7 +597,6 @@ bool httpsUploadFromSD(class Token token, String filepath) {
                     code = code + c;
                     i++;
                 }
-                
                 // HTTP 200 OK
                 if (code == "HTTP/1.1 200" || code == "HTTP/1.1 201")
                 {
@@ -606,7 +604,7 @@ bool httpsUploadFromSD(class Token token, String filepath) {
                         char c = client.read();
                         Serial.write(c);
                     }
-                    Serial.println("\nUpload succesful");
+                    Serial.println("\nUpload successful");
                     succesful = true;
                     client.stop();
                     return succesful;
@@ -616,20 +614,31 @@ bool httpsUploadFromSD(class Token token, String filepath) {
                 // HTTP 308 I have to restart my upload
                 
                 else if (code == "HTTP/1.1 308") {
+                    while(client.available()) {
+                        char c = client.read();
+                        Serial.write(c);
+                    }
                     client.flush();
                     client.stop();
-                    Serial.println("\nUpload interrupted. Starting a new session");
+                    Serial.println("\n308 response code.\nUpload interrupted. Starting a new session");
                     
                     // I have to open image again
                     image = SD.open(filepath, FILE_READ);
                     delay(1000);
+                } else {
+                    if (received) {
+                        while(client.available()) {
+                            char c = client.read();
+                            Serial.write(c);
+                        }
+                    }
                 }
             }
 
             if (!received) {
                 client.flush();
                 client.stop();
-                Serial.println("\nUpload interrupted. Starting a new session");
+                Serial.println("\nNo response.\nUpload interrupted. Starting a new session");
                 
                 // I have to open image again
                 image = SD.open(filepath, FILE_READ);
@@ -638,10 +647,13 @@ bool httpsUploadFromSD(class Token token, String filepath) {
         }
 
     } else if (code == "HTTP/1.1 401" && trytorefresh) {
-        Serial.println("Upload failed. Probably you need a new token");
+        Serial.println("\nUpload failed. Probably you need a new token");
+        client.flush();
+        client.stop();
+        return false;
     }
     
-    Serial.println("Upload failed");
+    Serial.println("\nUpload failed");
     client.flush();
     client.stop();
     return false;

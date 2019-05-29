@@ -14,65 +14,12 @@
 #include <SPI.h>
 #include <SD.h>
 #include "MyTime.h"
-#include "cactus_io_AM2302.h"
 
 Measurement::Measurement() {
-    _pinLight = A1;
-    _pinDHT = 0;
-    Lmin = LMIN;
-    Lmax = LMAX;
-    AM2302 temp(_pinDHT, 6);
-    dht = temp;
-    light = 0;
     time = "";
     temperature = 0;
     humidity = 0;
     lightint = 0;
-}
-
-void Measurement::begin(int pinLight, int pinDHT) {
-    _pinLight = pinLight;
-    _pinDHT = pinDHT;
-    pinMode(pinLight, INPUT);
-    Lmin = LMIN;
-    Lmax = LMAX;
-    pinMode(pinDHT,INPUT);
-    AM2302 temp(pinDHT);
-    dht = temp;
-    dht.begin();
-    
-}
-
-void Measurement::measure(RTCZero *rtc) {
-   
-    light = analogRead(_pinLight);
-    delay(10);
-    
-    light = (light + analogRead(_pinLight))/2;
-    
-    if (light <= Lmin){
-        Lmin = light;
-    }
-    
-    if (Lmax <= light){
-        Lmax = light;
-    }
-    
-    time = hours_withpoints(rtc);
-    lightint = (((float)light)/Lmax)*100;
-    
-    dht.readHumidity();
-    dht.readTemperature();
-    
-    if (isnan(dht.humidity) || isnan(dht.temperature_C)) {
-        Serial.println("Il sensore ha sbagliato la lettura");
-        return;
-    }
-    
-    humidity = dht.humidity;
-    temperature = dht.temperature_C;
-    Serial.println(String(humidity));
-    Serial.println(String(temperature));
 }
 
 bool Measurement::httpsDataSend(WiFiSSLClient client) {
@@ -133,14 +80,15 @@ bool Measurement::httpsDataSend(WiFiSSLClient client) {
 }
             
 bool Measurement::saveDataSD(String dir, String file_name){
+    file_name = file_name + ".csv";
     File txt;
-    if (SD.exists(dir + "/" + file_name)) {
-        txt = SD.open(dir + "/" + file_name, FILE_WRITE);
+    if (SD.exists("ARDUINO/" + dir + "/" + file_name)) {
+        txt = SD.open("ARDUINO/" + dir + "/" + file_name, FILE_WRITE);
     } else {
         if (!SD.exists(dir)) {
             SD.mkdir(dir);
         }
-        txt = SD.open(dir + "/" + file_name, FILE_WRITE);
+        txt = SD.open("ARDUINO/" + dir + "/" + file_name, FILE_WRITE);
         txt.println("Time,Temperature,Humidity,Light Intensity");
     }
     
