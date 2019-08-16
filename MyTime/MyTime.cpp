@@ -19,22 +19,22 @@ void print2digits(int number) {
 String hours_withpoints(RTCZero *rtc){
     String time_str;
     if ((*rtc).getHours() < 10) {
-        time_str = "0" + (*rtc).getHours();
+        time_str = "0" + String((*rtc).getHours());
     }
     else {
-        time_str = (*rtc).getHours();
+        time_str = String((*rtc).getHours());
     }
     if ((*rtc).getMinutes() < 10) {
-        time_str = time_str + ":0" + (*rtc).getMinutes();
+        time_str = time_str + ":0" + String((*rtc).getMinutes());
     }
     else {
-        time_str = time_str + ":" + (*rtc).getMinutes();
+        time_str = time_str + ":" + String((*rtc).getMinutes());
     }
     if ((*rtc).getSeconds() < 10) {
-        time_str = time_str + ":0" + (*rtc).getSeconds();
+        time_str = time_str + ":0" + String((*rtc).getSeconds());
     }
     else {
-        time_str = time_str + ":" + (*rtc).getSeconds();
+        time_str = time_str + ":" + String((*rtc).getSeconds());
     }
     return time_str;
 }
@@ -42,22 +42,22 @@ String hours_withpoints(RTCZero *rtc){
 String hours_withoutpoints(RTCZero *rtc){
     String time_str;
     if ((*rtc).getHours() < 10) {
-        time_str = "0" + (*rtc).getHours();
+        time_str = "0" + String((*rtc).getHours());
     }
     else {
-        time_str = (*rtc).getHours();
+        time_str = String((*rtc).getHours());
     }
     if ((*rtc).getMinutes() < 10) {
-        time_str = time_str + "0" + (*rtc).getMinutes();
+        time_str = time_str + "0" + String((*rtc).getMinutes());
     }
     else {
-        time_str = time_str + (*rtc).getMinutes();
+        time_str = time_str + String((*rtc).getMinutes());
     }
     if ((*rtc).getSeconds() < 10) {
-        time_str = time_str + "0" + (*rtc).getSeconds();
+        time_str = time_str + "0" + String((*rtc).getSeconds());
     }
     else {
-        time_str = time_str  + (*rtc).getSeconds();
+        time_str = time_str  + String((*rtc).getSeconds());
     }
     return time_str;
 }

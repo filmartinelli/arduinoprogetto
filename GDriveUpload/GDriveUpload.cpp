@@ -493,15 +493,23 @@ bool httpsUploadFromSD(class Token token, String filepath) {
             //When I reckognize 200 I enter here and identify the uploadID;
             if(i>0) {
                 if (code == "HTTP/1.1 200") {
+                    String tag = "";
                     
                     if (trytorefresh) {
                         trytorefresh = !trytorefresh;
                     }
                     
                     while (client.available()) {
+                        char c = client.read();
+                        Serial.write(c);
+                        if (c == '\n') break;
+                    }
+                    
+                    
+                    while (client.available()) {
                         char c = client.read(); // here I print in the Serial the response
                         Serial.write(c);
-                        if (c == ':') {
+                        if (c == ':' && tag == "X-GUploader-UploadID") {
                             c = client.read();
                             Serial.write(c);
                             c = client.read();
@@ -513,7 +521,10 @@ bool httpsUploadFromSD(class Token token, String filepath) {
                             } while (c != '\n');
                             break;
                         }
-                        
+                        tag = tag + c;
+                        if (c == '\n') {
+                            tag = "";
+                        }
                     }
                     break;
                 }
@@ -556,13 +567,16 @@ bool httpsUploadFromSD(class Token token, String filepath) {
         bool succesful = false;
         // I have obtained the uploadID, now I start uploading
         String location = "https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&upload_id=" + uploadID;
-        
         received = true;
+        int tentative = 0;
         
-        while(!succesful){                              // I upload until it is successful
+        while(!succesful && tentative < 3){                              // I upload until it is successful (but not more than 3 times)
             
             // I stop the previous client session, because now I start a new one, to do the PUT request and upload the file
             client.stop();
+            
+            // The number of tentatives increases
+            tentative = tentative + 1;
             
             // Upload request
 

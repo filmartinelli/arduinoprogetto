@@ -19,6 +19,8 @@
 
 const String CLIENT_ID = "288233591191-id7ch00pnut9maaonhi9re8lrg5soc5q.apps.googleusercontent.com";
 const String CLIENT_SECRET = "EuYWon-YFgewHz36Zo6KHJxG";
+//const String CLIENT_ID = "288233591191-rt0co1qrtp08a4o0m7ong91p6tfdin51.apps.googleusercontent.com";
+//const String CLIENT_SECRET = "KbuBnFm32VgT_ZGvfuc1H1aq";
 const String SCOPE = "https://www.googleapis.com/auth/drive.file";
 
 // STRUCTURES

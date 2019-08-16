@@ -226,15 +226,23 @@ bool httpsUploadFromArducam(ArduCAM *myCAM, String file_name, class Token token)
             //When I reckognize 200 I enter here and identify the uploadID;
             if(i>0) {
                 if (code == "HTTP/1.1 200") {
+                    String tag = "";
                     
                     if (trytorefresh) {
                         trytorefresh = !trytorefresh;
                     }
                     
                     while (client.available()) {
+                        char c = client.read();
+                        Serial.write(c);
+                        if (c == '\n') break;
+                    }
+                    
+                    
+                    while (client.available()) {
                         char c = client.read(); // here I print in the Serial the response
                         Serial.write(c);
-                        if (c == ':') {
+                        if (c == ':' && tag == "X-GUploader-UploadID") {
                             c = client.read();
                             Serial.write(c);
                             c = client.read();
@@ -246,7 +254,10 @@ bool httpsUploadFromArducam(ArduCAM *myCAM, String file_name, class Token token)
                             } while (c != '\n');
                             break;
                         }
-                        
+                        tag = tag + c;
+                        if (c == '\n') {
+                            tag = "";
+                        }
                     }
                     break;
                 }
@@ -291,15 +302,18 @@ bool httpsUploadFromArducam(ArduCAM *myCAM, String file_name, class Token token)
         bool successful = false;
         // I have obtained the uploadID, now I start uploading
         String location = "https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&upload_id=" + uploadID;
+        int tentative = 0;
         
-        while(!successful){
-                // I stop the previous client session, because now I start a new one, to do the PUT request and upload the file
-                client.stop();
+        while(!successful && tentative < 3){
+            // I stop the previous client session, because now I start a new one, to do the PUT request and upload the file
+            client.stop();
+            tentative = tentative + 1;
+            
             if (client.connect("www.googleapis.com", 443)) {
                 client.println("PUT " + location + " HTTP/1.1");
                 client.println("User-Agent: Arduino Camera");
                 client.println("Content-Length: "  + String(length));
-                client.println("Connection: close");
+                //client.println("Connection: close");
                 client.println();
                 
                 uint32_t temp_length = length;

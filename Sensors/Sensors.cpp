@@ -28,9 +28,16 @@ bool Measurement::httpsDataSend(WiFiSSLClient client) {
     if (client.connect("script.google.com", 443)) {
         // Make a HTTP request:
         String URL = REQUEST + WEB_APPLICATION;
-        URL = URL + "/exec?humidity=" + String(humidity, DEC);
-        URL = URL + "&temperature=" + String(temperature, DEC);
-        URL = URL + "&lightint=" + String(lightint, DEC);
+        
+        String temp = String(humidity, DEC);
+        temp.replace(".", ",");
+        URL = URL + "/exec?humidity=" + temp;
+        temp = String(temperature, DEC);
+        temp.replace(".", ",");
+        URL = URL + "&temperature=" + temp;
+        temp = String(lightint, DEC);
+        temp.replace(".", ",");
+        URL = URL + "&lightint=" + temp;
         
         client.println("GET " + URL + " HTTP/1.1");
         client.println("Host: script.google.com");
@@ -62,7 +69,7 @@ bool Measurement::httpsDataSend(WiFiSSLClient client) {
     
     while (client.available()) {
         char c = client.read();
-        Serial.write(c);
+        //Serial.write(c);
     }
     
     //When I reckognize 200 I enter here and identify the uploadID;
@@ -80,32 +87,40 @@ bool Measurement::httpsDataSend(WiFiSSLClient client) {
 }
             
 bool Measurement::saveDataSD(String dir, String file_name){
-    file_name = file_name + ".csv";
+    Serial.println("Saving data on the SD");
+    file_name = file_name + ".CSV";
     File txt;
+    Serial.print(SD.exists("ARDUINO/" + dir + "/" + file_name));
+    Serial.print(SD.exists("ARDUINO/" + dir + "/" + file_name));
     if (SD.exists("ARDUINO/" + dir + "/" + file_name)) {
         txt = SD.open("ARDUINO/" + dir + "/" + file_name, FILE_WRITE);
+        Serial.println("File already existing");
     } else {
-        if (!SD.exists(dir)) {
-            SD.mkdir(dir);
+        if (!SD.exists("ARDUINO/" + dir)) {
+            SD.mkdir("ARDUINO/" + dir);
+            Serial.println("Creation new directory");
         }
         txt = SD.open("ARDUINO/" + dir + "/" + file_name, FILE_WRITE);
-        txt.println("Time,Temperature,Humidity,Light Intensity");
+        txt.println("Time;Temperature;Humidity;Light Intensity");
+        Serial.println("Creation new file");
     }
     
     if(txt) {
         Serial.println(F("File txt opening successful"));
     } else {
         Serial.println(F("File txt opening failed"));
+        txt.close();
         return false;
     }
     txt.print(time);
-    txt.print(",");
+    txt.print(";");
     txt.print(temperature);
-    txt.print(",");
+    txt.print(";");
     txt.print(humidity);
-    txt.print(",");
+    txt.print(";");
     txt.println(lightint);
 
     txt.close();
+    Serial.println(F("Saving data successful"));
     return true;
 }
