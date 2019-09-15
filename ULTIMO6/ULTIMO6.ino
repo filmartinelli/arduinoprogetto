@@ -1,4 +1,5 @@
 //#include <neotimer.h>
+#include "MyCam.h"
 #include <SPI.h>
 #include <DHT.h>
 #include <WiFiNINA.h>
@@ -9,25 +10,28 @@
 #include "MyTime.h"
 #include <ArduCAM.h>
 #include "memorysaver.h"
-#include "MyCam.h"
 #include <RTCZero.h>
 #include "GDriveUpload.h"
 #include <LiquidCrystal.h>
 #include <NTPClient.h>
 #include <time.h>
+#include "Settings.h"
 
 RTCZero rtc;
 int next_hours = 0;
 int next_minutes = 0;
 int minutes = 0;
 
-int interval_minutes = 10;
+int button1 = A2;
+
+int interval_minutes = TAKE_PICTURE_INTERVAL;
 
 void take_picture();
+void dateSetup();
 
 void directory_change();
 void data_saving();
-//Neotimer mytimer = Neotimer(10);
+
 int count = 0;
 
 //**********************      SENSORS     ********************
@@ -35,11 +39,11 @@ int count = 0;
 #define DHTTYPE DHT22
 const int DataPinSens = A0;
 DHT dht(DataPinSens, DHT22);
-const int pinLight = A0;
+const int pinLight = A1;
 const int pinISR = 8;
 int light;
-int Lmin = 800;
-int Lmax = 100;
+int Lmin = 0;
+int Lmax = 1023;
 int lightint;
 LiquidCrystal lcd(14, 6, 5, 4, 3, 2);
 Measurement measurement;
@@ -49,8 +53,12 @@ void lcd_data_print();
 // **********************    WIFI     ********************
 //char ssid[] = "Rete-Laura";
 //char pass[] = "ViaMolini9cCodroipo33033";
-char ssid[] = "TP-Link_00FB";
-char pass[] = "31870094";
+//char ssid[] = "TP-Link_00FB";
+//char pass[] = "31870094";
+//char ssid[] = "SCALA";
+//char pass[] = "casoretto452";
+char ssid[] = SSid;
+char pass[] = PASSWORD;
 
 int status = WL_IDLE_STATUS;
 WiFiSSLClient client;
@@ -91,19 +99,15 @@ void sd_button();
 bool removing = false;
 
 // **********************    G API     ********************
-String device_code = "AH-1Ng04XtvAX-5ajyRktswhiAIC108l3MmBHw4WSmXw_v6g4qrrxpIB6lytThZG0uvPcnYZ8UXWuY3z9RU4Q8HadSmRppEhdg";
-String user_code = "FDS-ZFW-MPY";
-String access_token = "ya29.GlvHBpF0isxXfdy5PSbJ8acVDQagU5JZoEwKKmkv1dm5utH9zXAMULy0aWwUjdDJGTRazLkaBT8V58h0dSitRS9rEPUqmtM_t-0DjEECr7o24v1OppGLnJLjSeC_";
-String refresh_token = "1/h2QGlHVDypKvaQzt8w7BDxIvkptoE_hqLd0aBFh_4SM";
-
-TokenRequestData tokenrequest(device_code, user_code, 1800, 5, "https://www.google.com/device" , client);
-Token token(tokenrequest, access_token, refresh_token, 3600);
+TokenRequestData tokenrequest(DEVICE_CODE, USER_CODE, 1800, 5, "https://www.google.com/device" , client);
+Token token(tokenrequest, ACCESS_TOKEN, REFRESH_TOKEN, 3600);
 
 //********************** CAMERA VARIABLES ********************
 const int CAMERA_CS = 7;
 ArduCAM myCAM;
 bool capturing = false;
 int seconds;
+bool takePicture = false;
 
 //******************TIME***************
 int GMT = 2;
@@ -127,9 +131,12 @@ int month;
 
 void setup() {
   pinMode(13, OUTPUT);
+  pinMode(button1, INPUT) ;
+  pinMode(SD_REMOVING, INPUT);
   Serial.begin(9600);
   delay(3000);
   Serial.println("START SETUP\n");
+
 
   Wire.begin();
   SPI.begin();
@@ -195,6 +202,15 @@ void setup() {
   //Timing intialization
   timeClient.begin();
   attachInterrupt(digitalPinToInterrupt(SD_REMOVING), sd_button, CHANGE);
+
+
+  Serial.print(date_withoutbracket(&rtc));
+  //date_withoutbracket(&rtc) == "00101"
+  if (date_withoutbracket(&rtc) == "00101")
+  {
+    dateSetup();
+
+  }
 
   Serial.println("\nSETUP COMPLETE. START LOOP\n\n");
 }
@@ -266,9 +282,45 @@ void loop() {
   Serial.println(".");
   data_saving();
 
+  //Taking picture
+  if (takePicture) {
+    takePicture = false;
+    capturing = true;
+    int minutes = rtc.getMinutes();
+    int hours = rtc.getHours();
+
+    // Start taking the picture
+    //power_mode(&myCAM, 1); // I set the CMOS in high power mode
+    Serial.print("Taking the picture at: ");
+    jpg_name = hours_withoutpoints(&rtc) + ".JPG";
+    Serial.println(hours_withpoints(&rtc));
+    start_capture_picture(&myCAM);
+
+    // Set the next alarm
+    next_minutes = (minutes + interval_minutes) % 60;
+    next_hours = (hours + ((minutes + interval_minutes) / 60)) % 24;
+
+    // If the next alarm is the next day, set the change of directory
+    if (next_hours - hours < 0) {
+      rtc.detachInterrupt();
+      rtc.setAlarmTime(0, 0, 0);
+      rtc.enableAlarm(rtc.MATCH_HHMMSS);
+      rtc.attachInterrupt(directory_change);
+      Serial.println("Set alarm: directory_change at 00:00:00");
+    } else {    // else set the next alarm
+      rtc.setAlarmHours(next_hours);
+      rtc.setAlarmMinutes(next_minutes);
+      rtc.setAlarmSeconds(0);
+      rtc.enableAlarm(rtc.MATCH_HHMMSS);
+      rtc.attachInterrupt(take_picture);
+      Serial.print("Set alarm: take_picture at ");
+      Serial.println(String(next_hours) + ":" + String(next_minutes) + ":" + String(00));
+    }
+  }
+
   Serial.println(".");
   if (myCAM.get_bit(ARDUCHIP_TRIG , CAP_DONE_MASK) && capturing) {
-//    mytimer.stop();
+    //    mytimer.stop();
     capturing = false;
     Serial.println(F("CAPTURE DONE."));
 
@@ -307,12 +359,12 @@ void loop() {
       Serial.println("\nSAVING/UPLOADING ENDED");
       //power_mode(&myCAM, 0);
     }
-//    mytimer.restart();
+    //    mytimer.restart();
 
   }
 
   Serial.println(".");
-  if (removing) {
+  if (digitalRead(SD_REMOVING) == 1) {
     sd_removing();
     removing = false;
   }
@@ -561,40 +613,7 @@ void sd_removing() {
 
 
 void take_picture() {
-  int minutes = rtc.getMinutes();
-  int hours = rtc.getHours();
-
-  // Start taking the picture
-  //power_mode(&myCAM, 1); // I set the CMOS in high power mode
-  Serial.print("Taking the picture at: ");
-  jpg_name = hours_withoutpoints(&rtc) + ".JPG";
-  Serial.println(hours_withpoints(&rtc));
-  start_capture_picture(&myCAM);
-  capturing = true;
-
-  // Set the next alarm
-  next_minutes = (minutes + interval_minutes) % 60;
-  next_hours = (hours + ((minutes + interval_minutes) / 60)) % 24;
-
-  // If the next alarm is the next day, set the change of directory
-  if (next_hours - hours < 0) {
-    rtc.detachInterrupt();
-    rtc.setAlarmTime(0, 0, 0);
-    rtc.enableAlarm(rtc.MATCH_HHMMSS);
-    rtc.attachInterrupt(directory_change);
-    Serial.println("Set alarm: directory_change at 00:00:00");
-    return;
-  } else {    // else set the next alarm
-    rtc.setAlarmHours(next_hours);
-    rtc.setAlarmMinutes(next_minutes);
-    rtc.setAlarmSeconds(0);
-    rtc.enableAlarm(rtc.MATCH_HHMMSS);
-    rtc.attachInterrupt(take_picture);
-    Serial.print("Set alarm: take_picture at ");
-    Serial.println(String(next_hours) + ":" + String(next_minutes) + ":" + String(00));
-  }
-
-  return;
+  takePicture = true;
 }
 
 void directory_change() {
@@ -627,7 +646,7 @@ void data_saving() {
   if (data_available) {
     Serial.println("Data available");
     switch (state) {
-      Serial.println("Checking the state");
+        Serial.println("Checking the state");
       case SD_WIFI:
         measurement.httpsDataSend(client);              // Saving data on Google Drive Spreadsheet
         measurement.saveDataSD(directory, txt_name);     // Saving data on SD
@@ -644,4 +663,125 @@ void data_saving() {
     data_available = false;
     Serial.println("Data saving finished");
   }
+}
+
+void dateSetup() {
+  // print data dafault
+
+  lcd.clear();
+  lcd.setCursor(3, 0);
+  lcd.print("01/01/2019");
+  lcd.setCursor(4, 1);
+  lcd.print("00:00:00");
+
+  int temp = 19;
+  int days = 30;
+
+  // YEAR
+  while (digitalRead(SD_REMOVING) == 0) {
+
+    if (digitalRead(button1) == HIGH) {
+      delay(200);
+      temp = temp + 1;
+      lcd.setCursor(11, 0);
+      lcd.print(String(temp));
+    }
+  }
+  delay(200);
+  rtc.setYear(temp);
+  temp = 0;
+
+  // MONTH
+  while (digitalRead(SD_REMOVING) == 0) {
+
+    if (digitalRead(button1) == 1) {
+      delay(200);
+      temp = temp + 1;
+      if ((temp % 12) + 1 >= 10) {
+        lcd.setCursor(6, 0);
+      } else {
+        lcd.setCursor(7, 0);
+      }
+      lcd.print((temp % 12) + 1);
+
+    }
+
+  }
+  delay(200);
+  rtc.setMonth((temp % 12) + 1);
+
+  switch ((temp % 12) + 1) {
+    case 1 && 3 && 5 && 7 && 8 && 10 && 12:
+      days = 31;
+      break;
+    case 2:
+      days = 28;
+      break;
+    default:
+      days = 30;
+      break;
+  }
+
+  temp = 0;
+
+  // DAY
+  while (digitalRead(SD_REMOVING) == 0) {
+
+    if (digitalRead(button1) == 1) {
+      delay(200);
+      temp = temp + 1;
+      if ((temp % days) + 1 >= 10) {
+        lcd.setCursor(3, 0);
+      } else {
+        lcd.setCursor(4, 0);
+      }
+      lcd.print((temp % days) + 1);
+    }
+
+  }
+  delay(200);
+  rtc.setDay((temp % days) + 1);
+  temp = 0;
+
+  // TIME
+
+  // HOURS
+
+  while (digitalRead(SD_REMOVING) == 0) {
+
+    if (digitalRead(button1) == HIGH) {
+      delay(200);
+      temp = temp + 1;
+      if ((temp % 24) >= 10) {
+        lcd.setCursor(4, 1);
+      } else {
+        lcd.setCursor(5, 1);
+      }
+      lcd.print((temp % 24));
+    }
+  }
+  delay(200);
+  rtc.setHours(temp);
+  temp = 0;
+
+  // MINUTES
+  while (digitalRead(SD_REMOVING) == 0) {
+
+    if (digitalRead(button1) == HIGH) {
+      delay(200);
+      temp = temp + 1;
+      if ((temp % 60) + 1 >= 10) {
+        lcd.setCursor(7, 1);
+      } else {
+        lcd.setCursor(8, 1);
+      }
+      lcd.print((temp % 60) + 1);
+    }
+  }
+  delay(200);
+  rtc.setMinutes(temp);
+
+
+
+  return;
 }
